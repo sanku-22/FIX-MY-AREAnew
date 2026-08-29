@@ -63,6 +63,7 @@ export function friendlyMsg91Error(err, fallback) {
   const raw = (err && (err.message || err.msg || err.error || (typeof err === "string" ? err : ""))) || "";
   const m = String(raw).toLowerCase();
   if (!m) return fallback;
+  if (m.includes("captcha")) return "Couldn't verify the security check. Please tap Send OTP again and re-solve the puzzle. If it keeps failing, this app's web address must be added to the MSG91 widget's allowed domains.";
   if (m.includes("ip") && m.includes("block")) return "Your network was temporarily blocked by the OTP provider after too many attempts. Please wait ~15–30 minutes, or switch networks (e.g. mobile data / Wi-Fi), then try again.";
   if (m.includes("block")) return "The OTP provider temporarily blocked this request. Please wait a little while and try again.";
   if (m.includes("maximum") || m.includes("limit") || m.includes("too many")) return "Too many attempts. Please wait a while and try again.";
