@@ -39,6 +39,7 @@ A web app for citizens to report civic issues (potholes, garbage, streetlights, 
   - Backend: `msg91_auth.py` verifies the widget access-token via MSG91 verifyAccessToken using server-only `MSG91_AUTHKEY`; endpoint `POST /api/auth/phone/msg91` issues the existing citizen JWT cookie. Binds MSG91-verified mobile to submitted number.
   - Non-breaking: when `REACT_APP_MSG91_WIDGET_TOKEN` is empty, frontend falls back to existing demo/Twilio flow (msg91Enabled()=false).
   - Env to fill: frontend `REACT_APP_MSG91_WIDGET_TOKEN`; backend `MSG91_AUTHKEY`. (Widget ID 366843667262373335393635 already set.)
+  - STATUS (2026-06): Both credentials configured & LIVE. Backend verifyAccessToken confirmed working (AuthKey valid; invalid token→401). Widget loads & sends OTP. MSG91 enforces a mandatory rotating CAPTCHA before OTP send → full automated E2E blocked by CAPTCHA (by design); manual/real-user OTP verification required. User opted to keep CAPTCHA ON.
 
 ## Mocked / Demo
 - Twilio OTP: DEMO mode (demo_code returned in API response) — used only when MSG91 not configured
