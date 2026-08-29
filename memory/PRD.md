@@ -27,6 +27,12 @@ A web app for citizens to report civic issues (potholes, garbage, streetlights, 
   - NEW debounced (500ms) Nominatim location search in ReportWizard Step 2 (backend GET /api/geocode/search).
   - Verified via testing agent iteration_6: 11/11 frontend behaviors pass, zero re-init/memory-leak errors.
 
+## Design System
+- 2026-06: Redesigned citizen UI to **Minimalism** (soft neutral palette, single indigo accent #4F46E5, thin 1px borders, subtle shadows, rounded pills, Plus Jakarta Sans headings / Work Sans body). Mobile-first (verified at 390px).
+- **Dark/Light toggle** (ThemeContext.jsx): sun/moon in header, persists to localStorage `fma-theme`, `data-theme` on <html>, 300ms crossfade; dark map tiles via CSS filter.
+- **Emoji map pins**: 🕳️ pothole, 🗑️ garbage, 💡 streetlight, 💧 water, ⚠️ other, 📍 user (bob); clusters = indigo circles. First-load geolocation centers map on user (graceful fallback).
+- Tokens in index.css (:root + [data-theme="dark"]) + tailwind brutal-* utilities remapped to the minimal palette.
+
 ## Backlog
 - P2: Admin Review Queue screen for photos that fail AI verification
 - P2: Auto category selection from Gemini JSON output

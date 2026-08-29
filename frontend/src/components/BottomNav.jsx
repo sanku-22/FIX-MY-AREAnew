@@ -15,14 +15,15 @@ export default function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-[1100] mx-auto flex max-w-lg items-center justify-around border-t border-[#e6e3dc] bg-white/95 px-4 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 backdrop-blur-xl">
+    <nav className="fixed bottom-0 left-0 right-0 z-[1100] mx-auto flex max-w-lg items-center justify-around border-t border-brutal-border bg-brutal-surface px-4 pb-[max(env(safe-area-inset-bottom),10px)] pt-2">
       {items.map((it) => {
         const Icon = it.icon;
         const active = it.to === "/" ? loc.pathname === "/" : loc.pathname.startsWith(it.to);
         return (
           <NavLink key={it.to} to={it.to} data-testid={it.testid}
-            className={cn("flex flex-col items-center gap-1 rounded-xl px-8 py-1.5 text-xs font-semibold transition-colors", active ? "text-[#1f7a72]" : "text-[#9a9a9f]")}>
-            <Icon className="h-5 w-5" strokeWidth={active ? 2.5 : 2} />
+            className={cn("flex flex-col items-center gap-1 rounded-xl px-8 py-1.5 text-xs font-semibold transition-colors",
+              active ? "text-brutal-accent" : "text-brutal-soft")}>
+            <Icon className="h-5 w-5" strokeWidth={active ? 2.4 : 2} />
             {it.label}
           </NavLink>
         );

@@ -8,9 +8,11 @@ import AdminLogin from "@/pages/AdminLogin";
 import AdminPortal from "@/pages/AdminPortal";
 import BottomNav from "@/components/BottomNav";
 import { AdminAuthProvider } from "@/context/AdminAuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
 
 function App() {
   return (
+    <ThemeProvider>
     <div className="App">
       <BrowserRouter>
         <Routes>
@@ -24,6 +26,7 @@ function App() {
         <Toaster position="top-center" richColors />
       </BrowserRouter>
     </div>
+    </ThemeProvider>
   );
 }
 

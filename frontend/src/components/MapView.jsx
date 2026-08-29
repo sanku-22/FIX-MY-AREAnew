@@ -2,27 +2,14 @@ import React, { useEffect, useRef, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import Supercluster from "supercluster";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { STATUS } from "@/lib/constants";
-import { getStateGlyph } from "@/lib/stateIcons";
+import { CATEGORIES } from "@/lib/constants";
 
 const STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
-const PIN_GLYPH = '<path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>';
-
-function pinSvg(color, glyph) {
-  return `
-    <svg width="36" height="46" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M18 45C18 45 33 28.5 33 16.5C33 7.9 26.3 1 18 1C9.7 1 3 7.9 3 16.5C3 28.5 18 45 18 45Z" fill="${color}" stroke="white" stroke-width="2.3"/>
-      <circle cx="18" cy="16.5" r="9" fill="white"/>
-      <g transform="translate(8.4,7) scale(0.79)" stroke="${color}" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">${glyph}</g>
-    </svg>`;
-}
-
 function issueMarkerEl(issue) {
-  const status = STATUS[issue.status] || STATUS.open;
-  const glyph = getStateGlyph(issue.state);
+  const cat = CATEGORIES[issue.category] || CATEGORIES.uncategorized;
   const el = document.createElement("div");
-  el.className = "cf-pin";
-  el.innerHTML = pinSvg(status.color, glyph);
+  el.className = "cf-emoji-pin";
+  el.textContent = cat.emoji || "⚠️";
   return el;
 }
 
@@ -147,7 +134,8 @@ export default function MapView({
     if (userMarkerRef.current) { userMarkerRef.current.remove(); userMarkerRef.current = null; }
     if (userLocation && !draggableMarker) {
       const el = document.createElement("div");
-      el.className = "cf-userdot";
+      el.className = "cf-userpin";
+      el.textContent = "📍";
       userMarkerRef.current = new maplibregl.Marker({ element: el })
         .setLngLat([userLocation[1], userLocation[0]]).addTo(map);
     }
@@ -164,8 +152,8 @@ export default function MapView({
     const lngLat = [draggableMarker[1], draggableMarker[0]];
     if (!dragMarkerRef.current) {
       const el = document.createElement("div");
-      el.className = "cf-pin";
-      el.innerHTML = pinSvg("#1f7a72", PIN_GLYPH);
+      el.className = "cf-emoji-pin cf-emoji-pin-drag";
+      el.textContent = "📍";
       const marker = new maplibregl.Marker({ element: el, anchor: "bottom", draggable: true })
         .setLngLat(lngLat).addTo(map);
       marker.on("dragend", () => {

@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-    darkMode: ["class"],
+    darkMode: ['selector', '[data-theme="dark"]'],
     content: [
     "./src/**/*.{js,jsx,ts,tsx}",
     "./public/index.html"
@@ -8,16 +8,34 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        heading: ['"Public Sans"', 'sans-serif'],
-        sans: ['"Public Sans"', 'sans-serif'],
+        heading: ['"Plus Jakarta Sans"', 'sans-serif'],
+        body: ['"Work Sans"', 'sans-serif'],
+        sans: ['"Work Sans"', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'monospace'],
       },
+      boxShadow: {
+        brutal: '0 1px 2px rgba(var(--shadow), 0.06), 0 1px 3px rgba(var(--shadow), 0.05)',
+        'brutal-pressed': '0 1px 2px rgba(var(--shadow), 0.06)',
+        'brutal-lg': '0 10px 30px rgba(var(--shadow), 0.10)',
+        'brutal-top': '0 -8px 24px rgba(var(--shadow), 0.06)',
+      },
       borderRadius: {
+        brutal: '4px',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)'
       },
       colors: {
+        'brutal-bg': 'var(--bg)',
+        'brutal-surface': 'var(--surface)',
+        'brutal-text': 'var(--ink)',
+        'brutal-soft': 'var(--ink-soft)',
+        'brutal-border': 'var(--line)',
+        'brutal-green': 'var(--brutal-green)',
+        'brutal-yellow': 'var(--brutal-yellow)',
+        'brutal-pink': 'var(--brutal-pink)',
+        'brutal-cyan': 'var(--brutal-cyan)',
+        'brutal-accent': 'var(--brutal-accent)',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {

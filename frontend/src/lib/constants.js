@@ -1,11 +1,11 @@
 export const CATEGORIES = {
-  pothole: { label: "Pothole", color: "#FF453A", icon: "TriangleAlert" },
-  garbage: { label: "Garbage", color: "#FF9F0A", icon: "Trash2" },
-  streetlight: { label: "Streetlight", color: "#0A84FF", icon: "Lightbulb" },
-  water: { label: "Water", color: "#5AC8FA", icon: "Droplets" },
-  signage: { label: "Signage", color: "#AF52DE", icon: "Signpost" },
-  other: { label: "Other", color: "#8E8E93", icon: "CircleDot" },
-  uncategorized: { label: "General", color: "#8E8E93", icon: "CircleHelp" },
+  pothole: { label: "Pothole", color: "#FF453A", icon: "TriangleAlert", emoji: "🕳️" },
+  garbage: { label: "Garbage", color: "#FF9F0A", icon: "Trash2", emoji: "🗑️" },
+  streetlight: { label: "Streetlight", color: "#0A84FF", icon: "Lightbulb", emoji: "💡" },
+  water: { label: "Water", color: "#5AC8FA", icon: "Droplets", emoji: "💧" },
+  signage: { label: "Signage", color: "#AF52DE", icon: "Signpost", emoji: "⚠️" },
+  other: { label: "Other", color: "#8E8E93", icon: "CircleDot", emoji: "⚠️" },
+  uncategorized: { label: "General", color: "#8E8E93", icon: "CircleHelp", emoji: "⚠️" },
 };
 
 export const FILTER_CHIPS = [

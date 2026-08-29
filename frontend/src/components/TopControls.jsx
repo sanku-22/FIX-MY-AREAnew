@@ -3,25 +3,32 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { setLanguage } from "@/i18n";
 import { useAuth } from "@/context/AuthContext";
-import { LogIn, LogOut, ShieldCheck } from "lucide-react";
+import { useTheme } from "@/context/ThemeContext";
+import { LogIn, LogOut, ShieldCheck, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export default function TopControls({ compact = false }) {
+export default function TopControls() {
   const { t, i18n } = useTranslation();
   const { user, openLogin, logout } = useAuth();
+  const { theme, toggle } = useTheme();
   const lang = i18n.language?.startsWith("hi") ? "hi" : "en";
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
+      <button data-testid="theme-toggle" onClick={toggle} title="Toggle theme"
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-brutal-border bg-brutal-surface text-brutal-soft transition-colors hover:text-brutal-text">
+        {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      </button>
+
       <Link data-testid="admin-portal-link" to="/admin-login" title="Admin dashboard"
-        className="flex items-center gap-1.5 rounded-full border border-[#e6e3dc] bg-white px-2.5 py-1.5 text-xs font-bold text-[#1f7a72] transition-colors hover:bg-[#eef6f4]">
+        className="flex h-8 items-center gap-1.5 rounded-full border border-brutal-border bg-brutal-surface px-2.5 text-xs font-semibold text-brutal-soft transition-colors hover:text-brutal-text">
         <ShieldCheck className="h-4 w-4" /> <span className="hidden sm:inline">Admin</span>
       </Link>
 
-      <div data-testid="language-toggle" className="flex overflow-hidden rounded-full border border-[#e6e3dc] bg-white">
+      <div data-testid="language-toggle" className="flex overflow-hidden rounded-full border border-brutal-border bg-brutal-surface">
         {["en", "hi"].map((l) => (
           <button key={l} data-testid={`lang-${l}`} onClick={() => setLanguage(l)}
-            className={cn("px-2.5 py-1 text-xs font-bold transition-colors", lang === l ? "bg-[#1f7a72] text-white" : "text-[#6b6b70]")}>
+            className={cn("px-2 py-1.5 text-xs font-semibold transition-colors", lang === l ? "bg-brutal-accent text-white" : "text-brutal-soft")}>
             {l === "en" ? "EN" : "हिं"}
           </button>
         ))}
@@ -29,19 +36,20 @@ export default function TopControls({ compact = false }) {
 
       {user ? (
         <div className="flex items-center gap-1.5">
-          <span className="flex h-8 items-center gap-1.5 rounded-full border border-[#e6e3dc] bg-white pl-1.5 pr-3">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#1f7a72] text-[11px] font-bold text-white">
+          <span className="flex h-8 items-center gap-1.5 rounded-full border border-brutal-border bg-brutal-surface pl-1 pr-2.5">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brutal-accent text-[11px] font-bold text-white">
               {(user.name || "U").charAt(0).toUpperCase()}
             </span>
-            <span className="max-w-[70px] truncate text-xs font-semibold text-[#2a2a2c]">{user.name || t("auth.guest")}</span>
+            <span className="hidden max-w-[70px] truncate text-xs font-semibold text-brutal-text sm:inline">{user.name || t("auth.guest")}</span>
           </span>
-          <button data-testid="sign-out-btn" onClick={logout} className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e6e3dc] bg-white text-[#6b6b70]" title={t("auth.signOut")}>
+          <button data-testid="sign-out-btn" onClick={logout} title={t("auth.signOut")}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-brutal-border bg-brutal-surface text-brutal-soft transition-colors hover:text-brutal-text">
             <LogOut className="h-4 w-4" />
           </button>
         </div>
       ) : (
         <button data-testid="sign-in-btn" onClick={openLogin}
-          className="flex items-center gap-1.5 rounded-full bg-[#1f7a72] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#17635c]">
+          className="flex h-8 items-center gap-1.5 rounded-full bg-brutal-accent px-3 text-xs font-semibold text-white transition-colors hover:opacity-90">
           <LogIn className="h-4 w-4" /> {t("auth.signIn")}
         </button>
       )}
