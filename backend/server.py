@@ -54,7 +54,7 @@ CATEGORY_KEYWORDS = {
     "water": ["water", "leak", "pipe", "drain", "flood", "waterlogging", "overflow"],
     "signage": ["sign", "signage", "board", "signal", "traffic light", "marking"],
 }
-STATUS_ORDER = ["reported", "acknowledged", "in_progress", "resolved"]
+STATUS_ORDER = ["reported", "acknowledged", "in_progress", "resolved", "rejected"]
 
 CIVIC_CATEGORIES = [
     "pothole_or_damaged_road", "broken_streetlight", "water_leak_or_pipeline_burst",
@@ -230,14 +230,25 @@ class CategoryUpdateIn(BaseModel):
     category: str
 
 
-class AdminLogin(BaseModel):
-    email: str
-    password: str
+class AdminSessionIn(BaseModel):
+    session_id: str
 
 
-class TwoFAVerify(BaseModel):
-    temp_token: str
-    code: str
+class AdminProfileIn(BaseModel):
+    admin_type: str  # government_official | private_contractor
+    phone: str = ""
+    department: str = ""
+    employee_id: str = ""
+    state: str = ""
+    district: str = ""
+    ward: str = ""
+    company_name: str = ""
+    contract_license_id: str = ""
+
+
+class AssignIn(BaseModel):
+    assigned_admin_id: str = ""
+    assigned_team: str = ""
 
 
 # ---------------- Auth dependencies ----------------
@@ -263,24 +274,37 @@ async def require_citizen(user=Depends(get_current_citizen)):
 
 
 async def get_current_admin(admin_token: Optional[str] = Cookie(None), authorization: Optional[str] = Header(None)):
+    """Any authenticated admin (Google session), regardless of approval/profile status."""
     token = admin_token
     if not token and authorization and authorization.startswith("Bearer "):
         token = authorization.split(" ", 1)[1]
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = security.decode_token(token)
-    except Exception:
+    session = await db.admin_sessions.find_one({"session_token": token})
+    if not session:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
-    if payload.get("type") != "admin":
-        raise HTTPException(status_code=401, detail="Not an admin session")
-    admin = await db.admins.find_one({"admin_id": payload["sub"]}, {"_id": 0, "password_hash": 0, "totp_secret": 0})
-    if not admin or admin.get("status") != "approved":
-        raise HTTPException(status_code=403, detail="Admin account not active")
+    expires_at = session.get("expires_at")
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Session expired. Please sign in again.")
+    admin = await db.admins.find_one({"admin_id": session["admin_id"]}, {"_id": 0, "password_hash": 0, "totp_secret": 0})
+    if not admin:
+        raise HTTPException(status_code=401, detail="Admin not found")
     return admin
 
 
-async def require_super_admin(admin=Depends(get_current_admin)):
+async def require_approved_admin(admin=Depends(get_current_admin)):
+    if not admin.get("profile_complete"):
+        raise HTTPException(status_code=403, detail="Please complete your admin profile first.")
+    if admin.get("status") != "approved":
+        raise HTTPException(status_code=403, detail="Your admin account is awaiting super-admin approval.")
+    return admin
+
+
+async def require_super_admin(admin=Depends(require_approved_admin)):
     if admin.get("role") != "super_admin":
         raise HTTPException(status_code=403, detail="Super-admin access required")
     return admin
@@ -301,21 +325,26 @@ async def startup():
     try:
         await db.users.create_index("phone", unique=True)
         await db.admins.create_index("email", unique=True)
+        await db.admin_sessions.create_index("session_token", unique=True)
     except Exception as e:
         logger.error(f"Index error: {e}")
-    # Seed super admin
+    # Seed super admin (Google-based; no password)
     if SUPER_ADMIN_EMAIL:
-        existing = await db.admins.find_one({"email": SUPER_ADMIN_EMAIL})
+        email = SUPER_ADMIN_EMAIL.lower().strip()
+        existing = await db.admins.find_one({"email": email})
         if not existing:
             await db.admins.insert_one({
-                "admin_id": f"adm_{uuid.uuid4().hex[:12]}", "email": SUPER_ADMIN_EMAIL,
-                "password_hash": security.hash_password(SUPER_ADMIN_PASSWORD), "name": "Super Admin",
-                "designation": "Super Administrator", "department": "Municipal HQ",
+                "admin_id": f"adm_{uuid.uuid4().hex[:12]}", "email": email, "name": "Super Admin",
+                "picture": None, "phone": "", "admin_type": "government_official",
+                "department": "Municipal HQ", "employee_id": "SUPER",
                 "jurisdiction": {"state": "", "district": "", "ward": ""},
-                "proof_path": None, "role": "super_admin", "status": "approved",
-                "totp_secret": None, "totp_enabled": False, "created_at": now_iso(), "approved_by": "system",
+                "company_name": "", "contract_license_id": "",
+                "role": "super_admin", "status": "approved", "profile_complete": True,
+                "created_at": now_iso(), "approved_by": "system",
             })
             logger.info("Super admin seeded")
+        else:
+            await db.admins.update_one({"email": email}, {"$set": {"role": "super_admin", "status": "approved", "profile_complete": True}})
 
 
 # ---------------- Basic ----------------
@@ -548,82 +577,73 @@ async def add_comment(issue_id: str, payload: CommentCreate, user=Depends(requir
     return comment
 
 
-# ---------------- Admin auth ----------------
-async def _admin_login_ok(email: str) -> bool:
-    hour_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
-    fails = await db.admin_login_attempts.count_documents({"email": email, "ok": False, "created_at": {"$gte": hour_ago}})
-    return fails < 5
+# ---------------- Admin auth (Emergent Google) ----------------
+EMERGENT_SESSION_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
 
-@api_router.post("/admin/register")
-async def admin_register(
-    full_name: str = Form(...), email: str = Form(...), password: str = Form(...),
-    designation: str = Form(...), department: str = Form(...),
-    state: str = Form(...), district: str = Form(""), ward: str = Form(""),
-    official_id: str = Form(""), proof: Optional[UploadFile] = File(None),
-):
-    email = email.lower().strip()
-    if await db.admins.find_one({"email": email}):
-        raise HTTPException(status_code=400, detail="An admin with this email already exists.")
-    if len(password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-    proof_path = None
-    if proof is not None:
-        pdata = await proof.read()
-        pext = (proof.filename.split(".")[-1].lower() if proof.filename and "." in proof.filename else "bin")
-        proof_path = f"{APP_NAME}/admin_proofs/{uuid.uuid4()}.{pext}"
-        put_object(proof_path, pdata, proof.content_type or "application/octet-stream")
-    await db.admins.insert_one({
-        "admin_id": f"adm_{uuid.uuid4().hex[:12]}", "email": email,
-        "password_hash": security.hash_password(password), "name": full_name.strip(),
-        "official_id": official_id.strip(), "designation": designation.strip(), "department": department.strip(),
-        "jurisdiction": {"state": state.strip(), "district": district.strip(), "ward": ward.strip()},
-        "proof_path": proof_path, "role": "admin", "status": "pending",
-        "totp_secret": None, "totp_enabled": False, "created_at": now_iso(), "approved_by": None,
-    })
-    return {"status": "pending", "message": "Your request has been submitted for super-admin approval."}
+def _fetch_emergent_session(session_id: str) -> dict:
+    r = requests.get(EMERGENT_SESSION_URL, headers={"X-Session-ID": session_id}, timeout=15)
+    if r.status_code != 200:
+        raise ValueError("Invalid or expired Google session")
+    return r.json()
 
 
-@api_router.post("/admin/login")
-async def admin_login(payload: AdminLogin):
-    email = payload.email.lower().strip()
-    if not await _admin_login_ok(email):
-        raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
-    admin = await db.admins.find_one({"email": email})
-    ok = admin and security.verify_password(payload.password, admin["password_hash"])
-    await db.admin_login_attempts.insert_one({"email": email, "ok": bool(ok), "created_at": now_iso()})
-    if not ok:
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
-    if admin["status"] == "pending":
-        raise HTTPException(status_code=403, detail="Your admin request is pending super-admin approval.")
-    if admin["status"] == "rejected":
-        raise HTTPException(status_code=403, detail="Your admin request was rejected.")
-    temp = security.create_token({"sub": admin["admin_id"], "type": "admin_2fa"}, 10)
-    if not admin.get("totp_enabled"):
-        secret = admin.get("totp_secret") or security.new_totp_secret()
-        await db.admins.update_one({"admin_id": admin["admin_id"]}, {"$set": {"totp_secret": secret}})
-        return {"stage": "setup", "temp_token": temp, "otpauth_uri": security.totp_uri(secret, email), "secret": secret}
-    return {"stage": "verify", "temp_token": temp}
-
-
-@api_router.post("/admin/2fa/verify")
-async def admin_2fa(payload: TwoFAVerify, response: Response):
+@api_router.post("/admin/auth/session")
+async def admin_auth_session(payload: AdminSessionIn, response: Response):
     try:
-        data = security.decode_token(payload.temp_token)
-        assert data.get("type") == "admin_2fa"
-    except Exception:
-        raise HTTPException(status_code=401, detail="2FA session expired. Please log in again.")
-    admin = await db.admins.find_one({"admin_id": data["sub"]})
+        data = await asyncio.to_thread(_fetch_emergent_session, payload.session_id)
+    except Exception as e:
+        logger.error(f"[ADMIN AUTH] session exchange failed: {e}")
+        raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
+    email = (data.get("email") or "").lower().strip()
+    session_token = data.get("session_token")
+    if not email or not session_token:
+        raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
+    admin = await db.admins.find_one({"email": email})
     if not admin:
-        raise HTTPException(status_code=404, detail="Admin not found")
-    if not security.verify_totp(admin.get("totp_secret"), payload.code):
-        raise HTTPException(status_code=400, detail="Invalid 6-digit code from your authenticator app.")
-    if not admin.get("totp_enabled"):
-        await db.admins.update_one({"admin_id": admin["admin_id"]}, {"$set": {"totp_enabled": True}})
-    token = security.create_token({"sub": admin["admin_id"], "type": "admin"}, ADMIN_TOKEN_MIN)
-    set_cookie(response, "admin_token", token, ADMIN_TOKEN_MIN)
-    admin.pop("_id", None); admin.pop("password_hash", None); admin.pop("totp_secret", None)
-    return {"admin": admin, "token": token}
+        admin = {
+            "admin_id": f"adm_{uuid.uuid4().hex[:12]}", "email": email,
+            "name": data.get("name") or email.split("@")[0], "picture": data.get("picture"),
+            "phone": "", "admin_type": None,
+            "department": "", "employee_id": "", "jurisdiction": {"state": "", "district": "", "ward": ""},
+            "company_name": "", "contract_license_id": "",
+            "role": "admin", "status": "pending", "profile_complete": False,
+            "created_at": now_iso(), "approved_by": None,
+        }
+        await db.admins.insert_one(dict(admin))
+    else:
+        await db.admins.update_one({"email": email}, {"$set": {"name": admin.get("name") or data.get("name"), "picture": data.get("picture")}})
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    await db.admin_sessions.insert_one({"session_token": session_token, "admin_id": admin["admin_id"], "expires_at": expires_at.isoformat(), "created_at": now_iso()})
+    set_cookie(response, "admin_token", session_token, 7 * 24 * 60)
+    clean = await db.admins.find_one({"admin_id": admin["admin_id"]}, {"_id": 0, "password_hash": 0, "totp_secret": 0})
+    return {"admin": clean}
+
+
+@api_router.post("/admin/profile")
+async def admin_profile(payload: AdminProfileIn, admin=Depends(get_current_admin)):
+    if payload.admin_type not in ("government_official", "private_contractor"):
+        raise HTTPException(status_code=400, detail="Please choose your admin type.")
+    updates = {"admin_type": payload.admin_type, "phone": payload.phone.strip(), "profile_complete": True}
+    if payload.admin_type == "government_official":
+        if not payload.department.strip() or not payload.employee_id.strip():
+            raise HTTPException(status_code=400, detail="Department and Employee ID are required.")
+        updates.update({
+            "department": payload.department.strip(), "employee_id": payload.employee_id.strip(),
+            "jurisdiction": {"state": payload.state.strip(), "district": payload.district.strip(), "ward": payload.ward.strip()},
+            "company_name": "", "contract_license_id": "",
+        })
+    else:
+        if not payload.company_name.strip() or not payload.contract_license_id.strip():
+            raise HTTPException(status_code=400, detail="Company name and Contract/License ID are required.")
+        updates.update({
+            "company_name": payload.company_name.strip(), "contract_license_id": payload.contract_license_id.strip(),
+            "department": "", "employee_id": "", "jurisdiction": {"state": "", "district": "", "ward": ""},
+        })
+    if admin.get("status") == "rejected":
+        updates["status"] = "pending"
+    await db.admins.update_one({"admin_id": admin["admin_id"]}, {"$set": updates})
+    return await db.admins.find_one({"admin_id": admin["admin_id"]}, {"_id": 0, "password_hash": 0, "totp_secret": 0})
 
 
 @api_router.get("/admin/me")
@@ -632,7 +652,9 @@ async def admin_me(admin=Depends(get_current_admin)):
 
 
 @api_router.post("/admin/logout")
-async def admin_logout(response: Response):
+async def admin_logout(response: Response, admin_token: Optional[str] = Cookie(None)):
+    if admin_token:
+        await db.admin_sessions.delete_many({"session_token": admin_token})
     response.delete_cookie("admin_token", path="/")
     return {"ok": True}
 
@@ -640,7 +662,7 @@ async def admin_logout(response: Response):
 # ---------------- Admin: super-admin approvals ----------------
 @api_router.get("/admin/requests")
 async def admin_requests(admin=Depends(require_super_admin)):
-    return await db.admins.find({"status": "pending"}, {"_id": 0, "password_hash": 0, "totp_secret": 0}).to_list(500)
+    return await db.admins.find({"status": "pending", "profile_complete": True}, {"_id": 0, "password_hash": 0, "totp_secret": 0}).to_list(500)
 
 
 @api_router.post("/admin/requests/{admin_id}/approve")
@@ -659,10 +681,12 @@ async def reject_admin(admin_id: str, admin=Depends(require_super_admin)):
     return {"ok": True}
 
 
-# ---------------- Admin: jurisdiction-scoped data ----------------
-def _jurisdiction_query(admin: dict) -> dict:
+# ---------------- Admin: data scoping ----------------
+def _scope_query(admin: dict) -> dict:
     if admin.get("role") == "super_admin":
         return {}
+    if admin.get("admin_type") == "private_contractor":
+        return {"assigned_admin_id": admin["admin_id"]}
     j = admin.get("jurisdiction", {})
     q = {}
     if j.get("state"):
@@ -673,8 +697,8 @@ def _jurisdiction_query(admin: dict) -> dict:
 
 
 @api_router.get("/admin/issues")
-async def admin_issues(status: Optional[str] = None, category: Optional[str] = None, admin=Depends(get_current_admin)):
-    query = _jurisdiction_query(admin)
+async def admin_issues(status: Optional[str] = None, category: Optional[str] = None, admin=Depends(require_approved_admin)):
+    query = _scope_query(admin)
     if status and status != "all":
         query["status"] = status
     if category and category != "all":
@@ -683,8 +707,8 @@ async def admin_issues(status: Optional[str] = None, category: Optional[str] = N
 
 
 @api_router.get("/admin/metrics")
-async def admin_metrics(admin=Depends(get_current_admin)):
-    base = _jurisdiction_query(admin)
+async def admin_metrics(admin=Depends(require_approved_admin)):
+    base = _scope_query(admin)
     all_issues = await db.issues.find(base, {"_id": 0}).to_list(2000)
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
     by_category = {}
@@ -696,42 +720,92 @@ async def admin_metrics(admin=Depends(get_current_admin)):
         "open": len([i for i in all_issues if i["status"] == "open"]),
         "in_progress": len([i for i in all_issues if i["status"] == "in_progress"]),
         "resolved": len([i for i in all_issues if i["status"] == "resolved"]),
+        "rejected": len([i for i in all_issues if i["status"] == "rejected"]),
         "resolved_this_week": len([i for i in all_issues if i["status"] == "resolved" and i.get("updated_at", "") >= week_ago]),
         "flagged": len([i for i in all_issues if i.get("flagged_ai_generated")]),
         "by_category": by_category,
         "jurisdiction": admin.get("jurisdiction"),
         "role": admin.get("role"),
+        "admin_type": admin.get("admin_type"),
     }
 
 
-async def _assert_in_jurisdiction(admin: dict, issue: dict):
+@api_router.get("/admin/contractors")
+async def admin_contractors(admin=Depends(require_approved_admin)):
+    if admin.get("admin_type") == "private_contractor":
+        raise HTTPException(status_code=403, detail="Only officials can view contractors.")
+    docs = await db.admins.find(
+        {"admin_type": "private_contractor", "status": "approved"},
+        {"_id": 0, "admin_id": 1, "name": 1, "company_name": 1},
+    ).to_list(500)
+    return docs
+
+
+async def _assert_can_manage(admin: dict, issue: dict):
     if admin.get("role") == "super_admin":
+        return
+    if admin.get("admin_type") == "private_contractor":
+        if issue.get("assigned_admin_id") != admin["admin_id"]:
+            raise HTTPException(status_code=403, detail="This issue is not assigned to you.")
         return
     j = admin.get("jurisdiction", {})
     if j.get("state") and issue.get("state") != j["state"]:
         raise HTTPException(status_code=403, detail="This issue is outside your jurisdiction.")
 
 
-@api_router.patch("/admin/issues/{issue_id}/status")
-async def admin_update_status(issue_id: str, payload: StatusUpdateIn, admin=Depends(get_current_admin)):
+@api_router.patch("/admin/issues/{issue_id}/assign")
+async def admin_assign_issue(issue_id: str, payload: AssignIn, admin=Depends(require_approved_admin)):
+    if admin.get("admin_type") == "private_contractor":
+        raise HTTPException(status_code=403, detail="Contractors cannot assign issues.")
     issue = await db.issues.find_one({"id": issue_id})
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
-    await _assert_in_jurisdiction(admin, issue)
+    await _assert_can_manage(admin, issue)
+    updates = {"assigned_team": payload.assigned_team.strip(), "updated_at": now_iso()}
+    if payload.assigned_admin_id:
+        contractor = await db.admins.find_one({"admin_id": payload.assigned_admin_id, "admin_type": "private_contractor"}, {"_id": 0})
+        if not contractor:
+            raise HTTPException(status_code=404, detail="Contractor not found")
+        updates["assigned_admin_id"] = contractor["admin_id"]
+        updates["assigned_admin_name"] = contractor.get("company_name") or contractor.get("name")
+    else:
+        updates["assigned_admin_id"] = None
+        updates["assigned_admin_name"] = None
+    label = updates.get("assigned_admin_name") or payload.assigned_team.strip() or "team"
+    entry = {"status": issue.get("status", "open"), "note": f"Assigned to {label}", "created_at": now_iso(), "by": admin.get("name")}
+    await db.issues.update_one({"id": issue_id}, {"$set": updates, "$push": {"timeline": entry}})
+    return await db.issues.find_one({"id": issue_id}, {"_id": 0})
+
+
+@api_router.patch("/admin/issues/{issue_id}/status")
+async def admin_update_status(issue_id: str, payload: StatusUpdateIn, admin=Depends(require_approved_admin)):
+    issue = await db.issues.find_one({"id": issue_id})
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    await _assert_can_manage(admin, issue)
     if payload.status not in STATUS_ORDER:
         raise HTTPException(status_code=400, detail="Invalid status")
     entry = {"status": payload.status, "note": payload.note or "", "created_at": now_iso(), "by": admin.get("name")}
-    top = "resolved" if payload.status == "resolved" else ("in_progress" if payload.status in ("in_progress", "acknowledged") else "open")
+    if payload.status == "resolved":
+        top = "resolved"
+    elif payload.status == "rejected":
+        top = "rejected"
+    elif payload.status in ("in_progress", "acknowledged"):
+        top = "in_progress"
+    else:
+        top = "open"
     await db.issues.update_one({"id": issue_id}, {"$push": {"timeline": entry}, "$set": {"status": top, "updated_at": now_iso()}})
     return await db.issues.find_one({"id": issue_id}, {"_id": 0})
 
 
 @api_router.patch("/admin/issues/{issue_id}/category")
-async def admin_update_category(issue_id: str, payload: CategoryUpdateIn, admin=Depends(get_current_admin)):
+async def admin_update_category(issue_id: str, payload: CategoryUpdateIn, admin=Depends(require_approved_admin)):
+    if admin.get("admin_type") == "private_contractor":
+        raise HTTPException(status_code=403, detail="Contractors cannot change category.")
     issue = await db.issues.find_one({"id": issue_id})
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
-    await _assert_in_jurisdiction(admin, issue)
+    await _assert_can_manage(admin, issue)
     await db.issues.update_one({"id": issue_id}, {"$set": {"category": payload.category, "updated_at": now_iso()}})
     return await db.issues.find_one({"id": issue_id}, {"_id": 0})
 

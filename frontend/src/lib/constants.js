@@ -18,9 +18,10 @@ export const FILTER_CHIPS = [
 ];
 
 export const STATUS = {
-  open: { label: "Open", color: "#E0913A" },
+  open: { label: "Pending", color: "#E0913A" },
   in_progress: { label: "In Progress", color: "#5E8DBE" },
   resolved: { label: "Resolved", color: "#4E9E74" },
+  rejected: { label: "Rejected", color: "#C0554E" },
 };
 
 export const TIMELINE_STEPS = [
@@ -28,6 +29,7 @@ export const TIMELINE_STEPS = [
   { key: "acknowledged", label: "Acknowledged" },
   { key: "in_progress", label: "In Progress" },
   { key: "resolved", label: "Resolved" },
+  { key: "rejected", label: "Rejected" },
 ];
 
 export const DEFAULT_CENTER = [28.4595, 77.0266]; // Gurugram fallback

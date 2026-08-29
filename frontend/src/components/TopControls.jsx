@@ -1,8 +1,9 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { setLanguage } from "@/i18n";
 import { useAuth } from "@/context/AuthContext";
-import { LogIn, LogOut, User } from "lucide-react";
+import { LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function TopControls({ compact = false }) {
@@ -12,6 +13,11 @@ export default function TopControls({ compact = false }) {
 
   return (
     <div className="flex items-center gap-2">
+      <Link data-testid="admin-portal-link" to="/admin-login" title="Admin dashboard"
+        className="flex items-center gap-1.5 rounded-full border border-[#e6e3dc] bg-white px-2.5 py-1.5 text-xs font-bold text-[#1f7a72] transition-colors hover:bg-[#eef6f4]">
+        <ShieldCheck className="h-4 w-4" /> <span className="hidden sm:inline">Admin</span>
+      </Link>
+
       <div data-testid="language-toggle" className="flex overflow-hidden rounded-full border border-[#e6e3dc] bg-white">
         {["en", "hi"].map((l) => (
           <button key={l} data-testid={`lang-${l}`} onClick={() => setLanguage(l)}

@@ -69,13 +69,13 @@ export async function addComment(id, text) {
   return data;
 }
 
-// ---- admin auth ----
-export async function adminLogin(email, password) {
-  const { data } = await api.post("/admin/login", { email, password });
+// ---- admin auth (Emergent Google) ----
+export async function adminAuthSession(session_id) {
+  const { data } = await api.post("/admin/auth/session", { session_id });
   return data;
 }
-export async function admin2fa(temp_token, code) {
-  const { data } = await api.post("/admin/2fa/verify", { temp_token, code });
+export async function adminProfile(payload) {
+  const { data } = await api.post("/admin/profile", payload);
   return data;
 }
 export async function adminMe() {
@@ -84,10 +84,6 @@ export async function adminMe() {
 }
 export async function adminLogout() {
   await api.post("/admin/logout");
-}
-export async function adminRegister(formData) {
-  const { data } = await api.post("/admin/register", formData, { headers: { "Content-Type": "multipart/form-data" } });
-  return data;
 }
 export async function fetchAdminRequests() {
   const { data } = await api.get("/admin/requests");
@@ -107,6 +103,14 @@ export async function fetchAdminIssues(params = {}) {
 }
 export async function fetchAdminMetrics() {
   const { data } = await api.get("/admin/metrics");
+  return data;
+}
+export async function fetchContractors() {
+  const { data } = await api.get("/admin/contractors");
+  return data;
+}
+export async function adminAssign(id, assigned_admin_id, assigned_team) {
+  const { data } = await api.patch(`/admin/issues/${id}/assign`, { assigned_admin_id, assigned_team });
   return data;
 }
 export async function adminUpdateStatus(id, status, note) {
