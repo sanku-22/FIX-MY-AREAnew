@@ -64,6 +64,7 @@ export function friendlyMsg91Error(err, fallback) {
   const m = String(raw).toLowerCase();
   if (!m) return fallback;
   if (m.includes("captcha")) return "Couldn't verify the security check. Please tap Send OTP again and re-solve the puzzle. If it keeps failing, this app's web address must be added to the MSG91 widget's allowed domains.";
+  if (m.includes("forbidden") || m.includes("403") || m.includes("domain") || m.includes("not authoriz") || m.includes("unauthoriz")) return "This app's web address isn't authorized on the MSG91 widget. Add your domain to the widget's allowed domains in the MSG91 dashboard, then try again.";
   if (m.includes("ip") && m.includes("block")) return "Your network was temporarily blocked by the OTP provider after too many attempts. Please wait ~15–30 minutes, or switch networks (e.g. mobile data / Wi-Fi), then try again.";
   if (m.includes("block")) return "The OTP provider temporarily blocked this request. Please wait a little while and try again.";
   if (m.includes("maximum") || m.includes("limit") || m.includes("too many")) return "Too many attempts. Please wait a while and try again.";
@@ -78,7 +79,11 @@ function callMethod(name, ...args) {
   return new Promise((resolve, reject) => {
     const fn = window[name];
     if (typeof fn !== "function") return reject(new Error("OTP provider not ready"));
-    fn(...args, (data) => resolve(data), (err) => reject(err));
+    fn(...args, (data) => resolve(data), (err) => {
+      try { console.error("[MSG91-DEBUG] " + name + " failed:", typeof err === "string" ? err : JSON.stringify(err)); }
+      catch (_) { console.error("[MSG91-DEBUG] " + name + " failed (raw):", err); }
+      reject(err);
+    });
   });
 }
 
